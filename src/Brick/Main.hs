@@ -8,6 +8,7 @@ module Brick.Main
 
   -- * Event handler functions
   , continue
+  , switchApp
   , halt
   , suspendAndResume
   , lookupViewport
@@ -46,7 +47,6 @@ module Brick.Main
   )
 where
 
-import Control.Exception (finally)
 import Lens.Micro ((^.), (&), (.~), (%~), _1, _2)
 import Control.Monad (forever)
 import Control.Monad.Trans.Class (lift)
@@ -58,6 +58,7 @@ import Control.Applicative ((<$>))
 import Data.Monoid (mempty)
 #endif
 import qualified Data.Foldable as F
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Maybe (listToMaybe)
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -81,41 +82,6 @@ import Brick.Types (Widget, EventM(..))
 import Brick.Types.Internal
 import Brick.Widgets.Internal
 import Brick.AttrMap
-
--- | The library application abstraction. Your application's operations
--- are represented here and passed to one of the various main functions
--- in this module. An application is in terms of an application state
--- type 's', an application event type 'e', and a resource name type
--- 'n'. In the simplest case 'e' is unused (left polymorphic or set to
--- '()'), but you may define your own event type and use 'customMain'
--- to provide custom events. The state type is the type of application
--- state to be provided by you and iteratively modified by event
--- handlers. The resource name type is the type of names you can assign
--- to rendering resources such as viewports and cursor locations.
-data App s e n =
-    App { appDraw :: s -> [Widget n]
-        -- ^ This function turns your application state into a list of
-        -- widget layers. The layers are listed topmost first.
-        , appChooseCursor :: s -> [CursorLocation n] -> Maybe (CursorLocation n)
-        -- ^ This function chooses which of the zero or more cursor
-        -- locations reported by the rendering process should be
-        -- selected as the one to use to place the cursor. If this
-        -- returns 'Nothing', no cursor is placed. The rationale here
-        -- is that many widgets may request a cursor placement but your
-        -- application state is what you probably want to use to decide
-        -- which one wins.
-        , appHandleEvent :: s -> BrickEvent n e -> EventM n (Next s)
-        -- ^ This function takes the current application state and an
-        -- event and returns an action to be taken and a corresponding
-        -- transformed application state. Possible options are
-        -- 'continue', 'suspendAndResume', and 'halt'.
-        , appStartEvent :: s -> EventM n s
-        -- ^ This function gets called once just prior to the first
-        -- drawing of your application. Here is where you can make
-        -- initial scrolling requests, for example.
-        , appAttrMap :: s -> AttrMap
-        -- ^ The attribute map that should be used during rendering.
-        }
 
 -- | The default main entry point which takes an application and an
 -- initial state and returns the final state returned by a 'halt'
@@ -165,36 +131,50 @@ resizeOrQuit s (VtyEvent (EvResize _ _)) = continue s
 resizeOrQuit s _ = halt s
 
 data InternalNext n a = InternalSuspendAndResume (RenderState n) (IO a)
-                      | InternalHalt a
+                      | InternalRestart a Vty
+                      | InternalHalt a Vty
 
 readBrickEvent :: BChan (BrickEvent n e) -> BChan e -> IO (BrickEvent n e)
 readBrickEvent brickChan userChan = either id AppEvent <$> readBChan2 brickChan userChan
 
 runWithNewVty :: (Ord n)
               => Vty
+              -> IO Vty
               -> BChan (BrickEvent n e)
               -> Maybe (BChan e)
               -> App s e n
               -> RenderState n
               -> s
               -> IO (InternalNext n s)
-runWithNewVty buildVty brickChan mUserChan app initialRS initialSt =
-    withVty buildVty $ \vty -> do
-        pid <- forkIO $ supplyVtyEvents vty brickChan
-        let readEvent = case mUserChan of
-              Nothing -> readBChan brickChan
-              Just uc -> readBrickEvent brickChan uc
-            runInner rs st = do
-              (result, newRS) <- runVty vty readEvent app st (resetRenderState rs)
-              case result of
-                  SuspendAndResume act -> do
-                      killThread pid
-                      return $ InternalSuspendAndResume newRS act
-                  Halt s -> do
-                      killThread pid
-                      return $ InternalHalt s
-                  Continue s -> runInner newRS s
-        runInner initialRS initialSt
+runWithNewVty initialVty buildVty brickChan mUserChan app initialRS initialSt = do
+    pid <- forkIO $ supplyVtyEvents initialVty brickChan
+    let readEvent = case mUserChan of
+          Nothing -> readBChan brickChan
+          Just uc -> readBrickEvent brickChan uc
+        runInner rs st = do
+          (result, newRS) <- runVty initialVty readEvent app st (resetRenderState rs)
+          case result of
+              SuspendAndResume act -> do
+                  killThread pid
+                  shutdown initialVty
+                  return $ InternalSuspendAndResume newRS act
+              Halt s -> do
+                  killThread pid
+                  return $ InternalHalt s initialVty
+              Continue s -> runInner newRS s
+              Transition s2 newApp mChan revert -> do
+                  killThread pid
+                  ref <- newIORef $ Just initialVty
+                  let reuseThenBuildVty = do
+                          refVal <- readIORef ref
+                          case refVal of
+                              Nothing -> buildVty
+                              Just v -> do
+                                  writeIORef ref Nothing
+                                  return v
+                  (finalS2, finalVty) <- customMain' reuseThenBuildVty mChan newApp s2
+                  return $ InternalRestart (revert finalS2) finalVty
+    runInner initialRS initialSt
 
 -- | The custom event loop entry point to use when the simpler ones
 -- don't permit enough control.
@@ -214,11 +194,25 @@ customMain :: (Ord n)
            -- ^ The initial application state.
            -> IO s
 customMain buildVty mUserChan app initialAppState = do
+    (finalState, vty) <- customMain' buildVty mUserChan app initialAppState
+    shutdown vty
+    return finalState
+
+customMain' :: (Ord n)
+            => IO Vty
+            -> Maybe (BChan e)
+            -> App s e n
+            -> s
+            -> IO (s, Vty)
+customMain' buildVty mUserChan app initialAppState = do
     initialVty <- buildVty
     let run vty rs st brickChan = do
-            result <- runWithNewVty vty brickChan mUserChan app rs st
+            result <- runWithNewVty vty buildVty brickChan mUserChan app rs st
             case result of
-                InternalHalt s -> return s
+                InternalHalt s finalVty -> do
+                    return (s, finalVty)
+                InternalRestart s nextVty ->
+                    run nextVty emptyRS s brickChan
                 InternalSuspendAndResume newRS action -> do
                     newAppState <- action
                     newVty <- buildVty
@@ -374,10 +368,6 @@ invalidateCache :: (Ord n) => EventM n ()
 invalidateCache = EventM $ do
     lift $ modify (\s -> s { cacheInvalidateRequests = S.insert InvalidateEntire $ cacheInvalidateRequests s })
 
-withVty :: Vty -> (Vty -> IO a) -> IO a
-withVty vty useVty = do
-    useVty vty `finally` shutdown vty
-
 getRenderState :: EventM n (RenderState n)
 getRenderState = EventM $ asks oldState
 
@@ -484,6 +474,11 @@ viewportScroll n =
 -- state.
 continue :: s -> EventM n (Next s)
 continue = return . Continue
+
+-- | Continue running the event loop with the specified application
+-- state.
+switchApp :: (Ord n2) => s2 -> App s2 e2 n2 -> Maybe (BChan e2) -> (s2 -> s) -> EventM n (Next s)
+switchApp s a chan revert = return $ Transition s a chan revert
 
 -- | Halt the event loop and return the specified application state as
 -- the final state value.

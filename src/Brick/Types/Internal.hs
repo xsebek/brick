@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE GADTs #-}
 module Brick.Types.Internal
   ( ScrollRequest(..)
   , VisibilityRequest(..)
@@ -12,6 +13,11 @@ module Brick.Types.Internal
   , locL
   , origin
   , TerminalLocation(..)
+  , App(..)
+  , Widget(..)
+  , EventM(..)
+  , RenderM
+  , Size(..)
   , Viewport(..)
   , ViewportType(..)
   , RenderState(..)
@@ -55,6 +61,9 @@ where
 import Data.Monoid
 #endif
 
+import Control.Monad.IO.Class
+import Control.Monad.Trans.State.Lazy
+import Control.Monad.Trans.Reader
 import Lens.Micro (_1, _2, Lens')
 import Lens.Micro.TH (makeLenses)
 import qualified Data.Set as S
@@ -63,6 +72,7 @@ import Graphics.Vty (Vty, Event, Button, Modifier, DisplayRegion, Image, Attr, e
 import GHC.Generics
 import Control.DeepSeq (NFData)
 
+import Brick.BChan (BChan)
 import Brick.BorderMap (BorderMap)
 import qualified Brick.BorderMap as BM
 import Brick.Types.Common
@@ -126,12 +136,6 @@ data Extent n = Extent { extentName      :: n
                        , extentOffset    :: Location
                        }
                        deriving (Show, Read, Generic, NFData)
-
--- | The type of actions to take upon completion of an event handler.
-data Next a = Continue a
-            | SuspendAndResume (IO a)
-            | Halt a
-            deriving Functor
 
 -- | Scrolling direction.
 data Direction = Up
@@ -230,6 +234,98 @@ suffixLenses ''Result
 
 emptyResult :: Result n
 emptyResult = Result emptyImage [] [] [] BM.empty
+
+-- | Widget growth policies. These policies communicate to layout
+-- algorithms how a widget uses space when being rendered. These
+-- policies influence rendering order and space allocation in the box
+-- layout algorithm.
+data Size = Fixed
+          -- ^ Fixed widgets take up the same amount of space no matter
+          -- how much they are given (non-greedy).
+          | Greedy
+          -- ^ Greedy widgets take up all the space they are given.
+          deriving (Show, Eq, Ord)
+
+-- | The type of widgets.
+data Widget n =
+    Widget { hSize :: Size
+           -- ^ This widget's horizontal growth policy
+           , vSize :: Size
+           -- ^ This widget's vertical growth policy
+           , render :: RenderM n (Result n)
+           -- ^ This widget's rendering function
+           }
+
+-- | The type of the rendering monad. This monad is used by the
+-- library's rendering routines to manage rendering state and
+-- communicate rendering parameters to widgets' rendering functions.
+type RenderM n a = ReaderT Context (State (RenderState n)) a
+
+-- | The monad in which event handlers run. Although it may be tempting
+-- to dig into the reader value yourself, just use
+-- 'Brick.Main.lookupViewport'.
+newtype EventM n a =
+    EventM { runEventM :: ReaderT (EventRO n) (StateT (EventState n) IO) a
+           }
+           deriving (Functor) -- , Applicative, Monad, MonadIO)
+
+instance Monad (EventM n) where
+    a >>= f = EventM $ do
+        val <- runEventM a
+        runEventM $ f val
+    return = EventM . return
+
+instance Applicative (EventM n) where
+    pure = return
+    f <*> a = EventM $ do
+        func <- runEventM f
+        v <- runEventM a
+        return $ func v
+
+instance MonadIO (EventM n) where
+    liftIO = EventM . liftIO
+
+-- | The library application abstraction. Your application's operations
+-- are represented here and passed to one of the various main functions
+-- in this module. An application is in terms of an application state
+-- type 's', an application event type 'e', and a resource name type
+-- 'n'. In the simplest case 'e' is unused (left polymorphic or set to
+-- '()'), but you may define your own event type and use 'customMain'
+-- to provide custom events. The state type is the type of application
+-- state to be provided by you and iteratively modified by event
+-- handlers. The resource name type is the type of names you can assign
+-- to rendering resources such as viewports and cursor locations.
+data App s e n =
+    App { appDraw :: s -> [Widget n]
+        -- ^ This function turns your application state into a list of
+        -- widget layers. The layers are listed topmost first.
+        , appChooseCursor :: s -> [CursorLocation n] -> Maybe (CursorLocation n)
+        -- ^ This function chooses which of the zero or more cursor
+        -- locations reported by the rendering process should be
+        -- selected as the one to use to place the cursor. If this
+        -- returns 'Nothing', no cursor is placed. The rationale here
+        -- is that many widgets may request a cursor placement but your
+        -- application state is what you probably want to use to decide
+        -- which one wins.
+        , appHandleEvent :: s -> BrickEvent n e -> EventM n (Next s)
+        -- ^ This function takes the current application state and an
+        -- event and returns an action to be taken and a corresponding
+        -- transformed application state. Possible options are
+        -- 'continue', 'suspendAndResume', and 'halt'.
+        , appStartEvent :: s -> EventM n s
+        -- ^ This function gets called once just prior to the first
+        -- drawing of your application. Here is where you can make
+        -- initial scrolling requests, for example.
+        , appAttrMap :: s -> AttrMap
+        -- ^ The attribute map that should be used during rendering.
+        }
+
+-- | The type of actions to take upon completion of an event handler.
+data Next a where
+    Continue :: a -> Next a
+    SuspendAndResume :: IO a -> Next a
+    Halt :: a -> Next a
+    Transition :: (Ord n) => b -> App b e n -> Maybe (BChan e) -> (b -> a) -> Next a
 
 -- | The type of events.
 data BrickEvent n e = VtyEvent Event

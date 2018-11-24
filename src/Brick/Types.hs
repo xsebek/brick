@@ -88,10 +88,8 @@ import Data.Monoid (Monoid(..))
 
 import Lens.Micro (_1, _2, to, (^.), (&), (.~), Lens')
 import Lens.Micro.Type (Getting)
-import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Graphics.Vty (Attr)
-import Control.Monad.IO.Class
 
 import Brick.Types.TH
 import Brick.Types.Internal
@@ -121,40 +119,6 @@ handleEventLensed :: a
 handleEventLensed v target handleEvent ev = do
     newB <- handleEvent ev (v^.target)
     return $ v & target .~ newB
-
--- | The monad in which event handlers run. Although it may be tempting
--- to dig into the reader value yourself, just use
--- 'Brick.Main.lookupViewport'.
-newtype EventM n a =
-    EventM { runEventM :: ReaderT (EventRO n) (StateT (EventState n) IO) a
-           }
-           deriving (Functor, Applicative, Monad, MonadIO)
-
--- | Widget growth policies. These policies communicate to layout
--- algorithms how a widget uses space when being rendered. These
--- policies influence rendering order and space allocation in the box
--- layout algorithm.
-data Size = Fixed
-          -- ^ Fixed widgets take up the same amount of space no matter
-          -- how much they are given (non-greedy).
-          | Greedy
-          -- ^ Greedy widgets take up all the space they are given.
-          deriving (Show, Eq, Ord)
-
--- | The type of widgets.
-data Widget n =
-    Widget { hSize :: Size
-           -- ^ This widget's horizontal growth policy
-           , vSize :: Size
-           -- ^ This widget's vertical growth policy
-           , render :: RenderM n (Result n)
-           -- ^ This widget's rendering function
-           }
-
--- | The type of the rendering monad. This monad is used by the
--- library's rendering routines to manage rendering state and
--- communicate rendering parameters to widgets' rendering functions.
-type RenderM n a = ReaderT Context (State (RenderState n)) a
 
 -- | Get the current rendering context.
 getContext :: RenderM n Context

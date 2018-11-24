@@ -366,6 +366,21 @@ executable brick-hello-world-demo
                        text,
                        microlens
 
+executable brick-app-switch-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             AppSwitchDemo.hs
+  build-depends:       base,
+                       brick,
+                       vty,
+                       text,
+                       vector,
+                       microlens >= 0.3.0.0,
+                       microlens-th
+
 executable brick-edit-demo
   if !flag(demos)
     Buildable: False
