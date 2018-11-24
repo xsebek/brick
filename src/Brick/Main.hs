@@ -8,7 +8,8 @@ module Brick.Main
 
   -- * Event handler functions
   , continue
-  , switchApp
+  , callApp
+  , execApp
   , halt
   , suspendAndResume
   , lookupViewport
@@ -162,7 +163,7 @@ runWithNewVty initialVty buildVty brickChan mUserChan app initialRS initialSt = 
                   killThread pid
                   return $ InternalHalt s initialVty
               Continue s -> runInner newRS s
-              Transition s2 newApp mChan revert -> do
+              Transition s2 newApp mChan revert shouldContinue -> do
                   killThread pid
                   ref <- newIORef $ Just initialVty
                   let reuseThenBuildVty = do
@@ -173,7 +174,10 @@ runWithNewVty initialVty buildVty brickChan mUserChan app initialRS initialSt = 
                                   writeIORef ref Nothing
                                   return v
                   (finalS2, finalVty) <- customMain' reuseThenBuildVty mChan newApp s2
-                  return $ InternalRestart (revert finalS2) finalVty
+                  let newS1 = revert finalS2
+                  case shouldContinue of
+                      True -> return $ InternalRestart newS1 finalVty
+                      False -> return $ InternalHalt newS1 finalVty
     runInner initialRS initialSt
 
 -- | The custom event loop entry point to use when the simpler ones
@@ -475,10 +479,20 @@ viewportScroll n =
 continue :: s -> EventM n (Next s)
 continue = return . Continue
 
--- | Continue running the event loop with the specified application
--- state.
-switchApp :: (Ord n2) => s2 -> App s2 e2 n2 -> Maybe (BChan e2) -> (s2 -> s) -> EventM n (Next s)
-switchApp s a chan revert = return $ Transition s a chan revert
+-- | Transfer control of the terminal and event loop to the specified
+-- application using the provided initial state and custom event
+-- channel. When the new application halts, convert its final state
+-- with the specified function and continue executing the calling
+-- application.
+callApp :: (Ord n2) => s2 -> App s2 e2 n2 -> Maybe (BChan e2) -> (s2 -> s) -> EventM n (Next s)
+callApp s a chan revert = return $ Transition s a chan revert True
+
+-- | Transfer control of the terminal and event loop to the specified
+-- application using the provided initial state and custom event
+-- channel. When the new application halts, convert its final state and
+-- halt the calling application.
+execApp :: (Ord n2) => s2 -> App s2 e2 n2 -> Maybe (BChan e2) -> (s2 -> s) -> EventM n (Next s)
+execApp s a chan revert = return $ Transition s a chan revert False
 
 -- | Halt the event loop and return the specified application state as
 -- the final state value.

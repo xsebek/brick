@@ -325,7 +325,7 @@ data Next a where
     Continue :: a -> Next a
     SuspendAndResume :: IO a -> Next a
     Halt :: a -> Next a
-    Transition :: (Ord n) => b -> App b e n -> Maybe (BChan e) -> (b -> a) -> Next a
+    Transition :: (Ord n) => b -> App b e n -> Maybe (BChan e) -> (b -> a) -> Bool -> Next a
 
 -- | The type of events.
 data BrickEvent n e = VtyEvent Event

@@ -35,8 +35,8 @@ makeLenses ''St1
 makeLenses ''St2
 
 drawApp1 :: St1 -> [T.Widget Name1]
-drawApp1 st = [str $ "This is application 1. Press 't' to transition to " <>
-                     "app 2, or +/- to change num1.\nnum1 = " <> show (st^.num1) <>
+drawApp1 st = [str $ "This is application 1. Press 't' to call app 2, 'T' to exec app 2, " <>
+                     "or +/- to change num1.\nnum1 = " <> show (st^.num1) <>
                      "\nnum2 = " <> show (st^.num2_old)]
 
 drawApp2 :: St2 -> [T.Widget Name2]
@@ -50,7 +50,9 @@ app1Event st (T.VtyEvent ev) =
         V.EvKey V.KEsc [] ->
             M.halt st
         V.EvKey (V.KChar 't') [] ->
-            M.switchApp (St2 0) app2 Nothing (\st2 -> st { _num2_old = st2^.num2 })
+            M.callApp (St2 0) app2 Nothing (\st2 -> st { _num2_old = st2^.num2 })
+        V.EvKey (V.KChar 'T') [] ->
+            M.execApp (St2 0) app2 Nothing (\st2 -> st { _num2_old = st2^.num2 })
         V.EvKey (V.KChar '+') [] ->
             M.continue $ st & num1 %~ succ
         V.EvKey (V.KChar '-') [] ->
