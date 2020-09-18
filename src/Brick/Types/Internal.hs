@@ -40,6 +40,7 @@ module Brick.Types.Internal
   , renderCacheL
   , observedNamesL
   , vpSize
+  , vpContentSize
   , vpLeft
   , vpTop
   , imageL
@@ -98,6 +99,8 @@ data Viewport =
        -- ^ The row offset of the top of the viewport.
        , _vpSize :: DisplayRegion
        -- ^ The size of the viewport.
+       , _vpContentSize :: DisplayRegion
+       -- ^ The size of the viewport's contents.
        }
        deriving (Show, Read, Generic, NFData)
 

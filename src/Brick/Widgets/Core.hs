@@ -1031,7 +1031,7 @@ viewport vpname typ p =
 
       -- Update the viewport size.
       c <- getContext
-      let newVp = VP 0 0 newSize
+      let newVp = VP 0 0 newSize (0, 0)
           newSize = (c^.availWidthL, c^.availHeightL)
           doInsert (Just vp) = Just $ vp & vpSize .~ newSize
           doInsert Nothing = Just newVp
@@ -1123,6 +1123,14 @@ viewport vpname typ p =
       -- viewport
       translated <- render $ translateBy (Location (-1 * vpFinal^.vpLeft, -1 * vpFinal^.vpTop))
                            $ Widget Fixed Fixed $ return initialResult
+
+      -- Update the viewport's content size
+      let resultImage = initialResult^.imageL
+          newContentSize = (V.imageWidth resultImage, V.imageHeight resultImage)
+          doUpdate (Just vp2) = Just $ vp2 & vpContentSize .~ newContentSize
+          doUpdate Nothing = error "bug: viewport: could not update content size"
+
+      lift $ modify (& viewportMapL %~ (M.alter doUpdate vpname))
 
       -- Return the translated result with the visibility requests
       -- discarded
