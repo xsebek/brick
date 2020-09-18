@@ -33,9 +33,11 @@ renderFinal :: AttrMap
 renderFinal aMap layerRenders (w, h) chooseCursor rs =
     (newRS, picWithBg, theCursor, concat layerExtents)
     where
-        (layerResults, !newRS) = flip runState rs $ sequence $
+        (bottomUpLayerResults, !newRS) = flip runState rs $ sequence $
             (\p -> runReaderT p ctx) <$>
-            (render <$> cropToContext <$> layerRenders)
+            (render <$> cropToContext <$> reverse layerRenders)
+
+        topDownLayerResults = reverse bottomUpLayerResults
 
         ctx = Context { ctxAttrName = mempty
                       , availWidth = w
@@ -46,14 +48,14 @@ renderFinal aMap layerRenders (w, h) chooseCursor rs =
                       , ctxAttrMap = aMap
                       , ctxDynBorders = False
                       }
-        pic = V.picForLayers $ uncurry V.resize (w, h) <$> (^.imageL) <$> layerResults
+        pic = V.picForLayers $ (uncurry V.resize (w, h) . image) <$> topDownLayerResults
 
         -- picWithBg is a workaround for runaway attributes.
         -- See https://github.com/coreyoconnor/vty/issues/95
         picWithBg = pic { V.picBackground = V.Background ' ' V.defAttr }
 
-        layerCursors = (^.cursorsL) <$> layerResults
-        layerExtents = reverse $ (^.extentsL) <$> layerResults
+        layerCursors = (^.cursorsL) <$> topDownLayerResults
+        layerExtents = (^.extentsL) <$> bottomUpLayerResults
         theCursor = chooseCursor $ concat layerCursors
 
 -- | After rendering the specified widget, crop its result image to the
