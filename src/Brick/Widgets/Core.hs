@@ -78,6 +78,7 @@ module Brick.Widgets.Core
 
   -- * Scrollable viewports
   , viewport
+  , reportViewportContentSize
   , visible
   , visibleRegion
   , unsafeLookupViewport
@@ -1029,11 +1030,11 @@ viewport vpname typ p =
 
       observeName vpname
 
-      -- Update the viewport size.
+      -- Update the viewport size and reset the content size to zero.
       c <- getContext
       let newVp = VP 0 0 newSize (0, 0)
           newSize = (c^.availWidthL, c^.availHeightL)
-          doInsert (Just vp) = Just $ vp & vpSize .~ newSize
+          doInsert (Just vp) = Just $ vp & vpSize .~ newSize & vpContentSize .~ (0, 0)
           doInsert Nothing = Just newVp
 
       lift $ modify (& viewportMapL %~ (M.alter doInsert vpname))
@@ -1124,10 +1125,14 @@ viewport vpname typ p =
       translated <- render $ translateBy (Location (-1 * vpFinal^.vpLeft, -1 * vpFinal^.vpTop))
                            $ Widget Fixed Fixed $ return initialResult
 
-      -- Update the viewport's content size
+      -- Update the viewport's content size only if it hasn't changed
+      -- from zero
       let resultImage = initialResult^.imageL
           newContentSize = (V.imageWidth resultImage, V.imageHeight resultImage)
-          doUpdate (Just vp2) = Just $ vp2 & vpContentSize .~ newContentSize
+          doUpdate (Just vp2) =
+              if vp2^.vpContentSize == (0, 0)
+              then Just $ vp2 & vpContentSize .~ newContentSize
+              else Just vp2
           doUpdate Nothing = error "bug: viewport: could not update content size"
 
       lift $ modify (& viewportMapL %~ (M.alter doUpdate vpname))
@@ -1148,6 +1153,33 @@ viewport vpname typ p =
                       $ padRight Max
                       $ Widget Fixed Fixed
                       $ return $ translated & visibilityRequestsL .~ mempty
+
+-- | Report a viewport's content size. This is used to indicate that
+-- the content size for the viewport should be as specified rather than
+-- inferred by measuring the image that gets rendered in the viewport,
+-- which may not be an accurate representation of the total amount of
+-- content.
+--
+-- This MUST be used in a custom widget inside a viewport. It will have
+-- no effect when used outside the rendering of viewport contents.
+--
+-- If the specified viewport name has no viewport entry, this does
+-- nothing. Note that the size @(0, 0)@ is special: if that is the size
+-- reported here, the renderer will still calculate the physical size of
+-- the viewport's image content to determine the size.
+reportViewportContentSize :: (Ord n)
+                          => n
+                          -- ^ The viewport whose size is to be recorded
+                          -> (Int, Int)
+                          -- ^ Width and height of the contents
+                          -> RenderM n ()
+reportViewportContentSize n sz = do
+      let doUpdate (Just vp2) =
+              Just $ vp2 & vpContentSize .~ sz
+          doUpdate Nothing =
+              Nothing
+
+      lift $ modify (& viewportMapL %~ (M.alter doUpdate n))
 
 -- | Given a name, obtain the extent for that name by consulting the
 -- state in the rendering monad. NOTE! Some care must be taken when

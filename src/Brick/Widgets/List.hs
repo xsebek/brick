@@ -370,8 +370,14 @@ drawListElements foc l drawElem =
                 in makeVisible elemWidget
 
         render $ viewport (l^.listNameL) Vertical $
-                 translateBy (Location (0, off)) $
-                 vBox $ toList drawnElements
+            Widget Fixed Fixed $ do
+                reportViewportContentSize (l^.listNameL)
+                    ( c^.availWidthL
+                    , l^.listItemHeightL * length (l^.listElementsL)
+                    )
+
+                render $ translateBy (Location (0, off)) $
+                         vBox $ toList drawnElements
 
 -- | Insert an item into a list at the specified position.
 --
