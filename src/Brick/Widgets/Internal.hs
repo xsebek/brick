@@ -12,10 +12,13 @@ import Control.Applicative
 #endif
 
 import Lens.Micro ((^.), (&), (%~))
+import Control.Monad (forM_)
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Data.Maybe (catMaybes)
 import qualified Graphics.Vty as V
+import qualified Data.Map as M
 
 import Brick.Types
 import Brick.Types.Internal
@@ -24,7 +27,8 @@ import Brick.Widgets.Border.Style
 import Brick.BorderMap (BorderMap)
 import qualified Brick.BorderMap as BM
 
-renderFinal :: AttrMap
+renderFinal :: (Ord n)
+            => AttrMap
             -> [Widget n]
             -> V.DisplayRegion
             -> ([CursorLocation n] -> Maybe (CursorLocation n))
@@ -35,7 +39,13 @@ renderFinal aMap layerRenders (w, h) chooseCursor rs =
     where
         (bottomUpLayerResults, !newRS) = flip runState rs $ sequence $
             (\p -> runReaderT p ctx) <$>
-            (render <$> cropToContext <$> reverse layerRenders)
+            (mkRenderer <$> reverse layerRenders)
+
+        mkRenderer wdg = do
+            result <- render $ cropToContext wdg
+            lift $ forM_ (result^.extentsL) $ \e ->
+                modify (& availableExtentsL %~ M.insert (extentName e) e)
+            return result
 
         topDownLayerResults = reverse bottomUpLayerResults
 

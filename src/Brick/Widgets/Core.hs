@@ -81,6 +81,7 @@ module Brick.Widgets.Core
   , visible
   , visibleRegion
   , unsafeLookupViewport
+  , unsafeLookupExtent
   , cached
 
   -- ** Adding offsets to cursor positions and visibility requests
@@ -1139,6 +1140,17 @@ viewport vpname typ p =
                       $ padRight Max
                       $ Widget Fixed Fixed
                       $ return $ translated & visibilityRequestsL .~ mempty
+
+-- | Given a name, obtain the extent for that name by consulting the
+-- state in the rendering monad. NOTE! Some care must be taken when
+-- calling this function, since it only returns useful values after
+-- the extent in question has been rendered. If you call this function
+-- during rendering before an extent has been rendered, you will get
+-- nothing. This is because extents are updated during rendering and the
+-- one you are interested in may not have been rendered yet. So if you
+-- want to use this, be sure you know what you are doing.
+unsafeLookupExtent :: (Ord n) => n -> RenderM n (Maybe (Extent n))
+unsafeLookupExtent name = lift $ gets (M.lookup name . (^.availableExtentsL))
 
 -- | Given a name, obtain the viewport for that name by consulting the
 -- viewport map in the rendering monad. NOTE! Some care must be taken

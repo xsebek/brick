@@ -43,6 +43,7 @@ module Brick.Types.Internal
   , vpLeft
   , vpTop
   , imageL
+  , availableExtentsL
   , cursorsL
   , extentsL
   , bordersL
@@ -252,6 +253,7 @@ data RenderState n =
        , observedNames :: !(S.Set n)
        , renderCache :: M.Map n (Result n)
        , clickableNames :: [n]
+       , availableExtents :: M.Map n (Extent n)
        } deriving (Read, Show, Generic, NFData)
 
 data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
