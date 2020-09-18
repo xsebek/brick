@@ -1067,7 +1067,8 @@ viewport vpname typ p =
       when (not $ null relevantRequests) $ do
           mVp <- lift $ gets $ (^.viewportMapL.to (M.lookup vpname))
           case mVp of
-              Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <> " absent from viewport map"
+              Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <>
+                                 " absent from viewport map"
               Just vp -> do
                   let updatedVp = applyRequests relevantRequests vp
                       applyRequests [] v = v
@@ -1085,7 +1086,8 @@ viewport vpname typ p =
       when (not $ null $ initialResult^.visibilityRequestsL) $ do
           mVp <- lift $ gets $ (^.viewportMapL.to (M.lookup vpname))
           case mVp of
-              Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <> " absent from viewport map"
+              Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <>
+                                 " absent from viewport map"
               Just vp -> do
                   let rqs = initialResult^.visibilityRequestsL
                       updateVp vp' rq = case typ of
@@ -1098,7 +1100,8 @@ viewport vpname typ p =
       -- viewport offsets invalid, reset them
       mVp <- lift $ gets $ (^.viewportMapL.to (M.lookup vpname))
       vp <- case mVp of
-          Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <> " absent from viewport map"
+          Nothing -> error $ "BUG: viewport: viewport name " <> show vpname <>
+                             " absent from viewport map"
           Just v -> return v
 
       let img = initialResult^.imageL
