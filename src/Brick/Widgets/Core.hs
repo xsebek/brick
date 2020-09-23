@@ -84,6 +84,8 @@ module Brick.Widgets.Core
   , unsafeLookupViewport
   , unsafeLookupExtent
   , cached
+  , withVScrollBarPolicy
+  , withHScrollBarPolicy
 
   -- ** Adding offsets to cursor positions and visibility requests
   , addResultOffset
@@ -151,6 +153,20 @@ class Named a n where
 -- for any border rendering.
 withBorderStyle :: BorderStyle -> Widget n -> Widget n
 withBorderStyle bs p = Widget (hSize p) (vSize p) $ withReaderT (& ctxBorderStyleL .~ bs) (render p)
+
+-- | When rendering the specified widget, use the specified vertical
+-- scroll bar rendering policy for any viewports contained in the
+-- widget.
+withVScrollBarPolicy :: ScrollBarPolicy -> Widget n -> Widget n
+withVScrollBarPolicy sb p =
+    Widget (hSize p) (vSize p) $ withReaderT (& ctxVScrollBarPolicyL .~ sb) (render p)
+
+-- | When rendering the specified widget, use the specified horizontal
+-- scroll bar rendering policy for any viewports contained in the
+-- widget.
+withHScrollBarPolicy :: ScrollBarPolicy -> Widget n -> Widget n
+withHScrollBarPolicy sb p =
+    Widget (hSize p) (vSize p) $ withReaderT (& ctxHScrollBarPolicyL .~ sb) (render p)
 
 -- | When rendering the specified widget, create borders that respond
 -- dynamically to their neighbors to form seamless connections.

@@ -20,6 +20,7 @@ module Brick.Types.Internal
   , cursorLocationL
   , cursorLocationNameL
   , Context(..)
+  , ScrollBarPolicy(..)
   , EventState(..)
   , EventRO(..)
   , Next(..)
@@ -265,6 +266,19 @@ data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
                          , oldState :: RenderState n
                          }
 
+-- | Configuration for when to show scroll bars for scrollable
+-- viewports.
+data ScrollBarPolicy =
+    Never
+    -- ^ Never show scroll bars.
+    | Always
+    -- ^ Always show scroll bars even if the content is smaller than the
+    -- viewport.
+    | Auto
+    -- ^ Only show scroll bars when the content is larger than the
+    -- viewport.
+    deriving (Eq, Show)
+
 -- | The rendering context. This tells widgets how to render: how much
 -- space they have in which to render, which attribute they should use
 -- to render, which bordering style should be used, and the attribute map
@@ -278,6 +292,8 @@ data Context =
             , ctxBorderStyle :: BorderStyle
             , ctxAttrMap :: AttrMap
             , ctxDynBorders :: Bool
+            , ctxVScrollBarPolicy :: ScrollBarPolicy
+            , ctxHScrollBarPolicy :: ScrollBarPolicy
             }
             deriving Show
 

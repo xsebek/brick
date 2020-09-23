@@ -33,7 +33,7 @@ module Brick.Types
   , getContext
 
   -- ** The rendering context
-  , Context(ctxAttrName, availWidth, availHeight, windowWidth, windowHeight, ctxBorderStyle, ctxAttrMap, ctxDynBorders)
+  , Context(ctxAttrName, availWidth, availHeight, windowWidth, windowHeight, ctxBorderStyle, ctxAttrMap, ctxDynBorders, ctxVScrollBarPolicy, ctxHScrollBarPolicy)
   , attrL
   , availWidthL
   , availHeightL
@@ -43,6 +43,8 @@ module Brick.Types
   , ctxAttrNameL
   , ctxBorderStyleL
   , ctxDynBordersL
+  , ctxVScrollBarPolicyL
+  , ctxHScrollBarPolicyL
 
   -- ** Rendering results
   , Result(..)

@@ -57,6 +57,8 @@ renderFinal aMap layerRenders (w, h) chooseCursor rs =
                       , ctxBorderStyle = defaultBorderStyle
                       , ctxAttrMap = aMap
                       , ctxDynBorders = False
+                      , ctxVScrollBarPolicy = Never
+                      , ctxHScrollBarPolicy = Never
                       }
         pic = V.picForLayers $ (uncurry V.resize (w, h) . image) <$> topDownLayerResults
 
