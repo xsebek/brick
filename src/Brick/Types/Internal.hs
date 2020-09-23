@@ -267,15 +267,12 @@ data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
                          }
 
 -- | Configuration for when to show scroll bars for scrollable
--- viewports.
+-- viewports. See 'viewport' for how this is used.
 data ScrollBarPolicy =
     Never
     -- ^ Never show scroll bars.
     | Always
     -- ^ Always show scroll bars even if the content is smaller than the
-    -- viewport.
-    | Auto
-    -- ^ Only show scroll bars when the content is larger than the
     -- viewport.
     deriving (Eq, Show)
 

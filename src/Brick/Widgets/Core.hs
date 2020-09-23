@@ -86,6 +86,9 @@ module Brick.Widgets.Core
   , cached
   , withVScrollBarPolicy
   , withHScrollBarPolicy
+  , scrollBarAttr
+  , verticalScrollBarAttr
+  , horizontalScrollBarAttr
 
   -- ** Adding offsets to cursor positions and visibility requests
   , addResultOffset
@@ -110,6 +113,7 @@ import Control.Monad ((>=>),when)
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (fromJust)
 import qualified Data.Foldable as F
 import qualified Data.Text as T
 import qualified Data.DList as DL
@@ -996,6 +1000,18 @@ cacheLookup n = do
 cacheUpdate :: (Ord n) => n -> Result n -> RenderM n ()
 cacheUpdate n r = lift $ modify (& renderCacheL %~ M.insert n r)
 
+-- | The base attribute for scroll bars.
+scrollBarAttr :: AttrName
+scrollBarAttr = "scrollBar"
+
+-- | The attribute for vertical scroll bars. Based on 'scrollBarAttr'.
+verticalScrollBarAttr :: AttrName
+verticalScrollBarAttr = scrollBarAttr <> "vertical"
+
+-- | The attribute for horizontal scroll bars. Based on 'scrollBarAttr'.
+horizontalScrollBarAttr :: AttrName
+horizontalScrollBarAttr = scrollBarAttr <> "horizontal"
+
 -- | Render the specified widget in a named viewport with the
 -- specified type. This permits widgets to be scrolled without being
 -- scrolling-aware. To make the most use of viewports, the specified
@@ -1017,6 +1033,24 @@ cacheUpdate n r = lift $ modify (& renderCacheL %~ M.insert n r)
 -- used to display large contents for scrolling. This function is best
 -- used when the contents are not too large OR when the contents are
 -- large and render-cacheable.
+--
+-- Viewports can optionally draw scroll bars depending on the
+-- relationship between the content size and the viewport size. By
+-- default, no vertical or horizontal scroll bars are ever drawn (i.e.
+-- the policy defaults to 'Never'). You can change this behavior with
+-- 'withVScrollBarPolicy' or 'withHScrollBarPolicy' e.g.,
+--
+-- > withVScrollBarPolicy Always $
+-- >     viewport ...
+--
+-- Note that when a scroll bar is drawn, it necessarily consumes a
+-- column or row that would have otherwise been available to the
+-- viewport.
+--
+-- When scroll bars are drawn (i.e. when the policy is 'Always'), they
+-- are drawn with 'verticalScrollBarAttr' and 'horizontalScrollBarAttr',
+-- respectively. The part of the scroll bar area that represents the
+-- "tray" of the scroll bar will be rendered with the default attribute.
 viewport :: (Ord n, Show n)
          => n
          -- ^ The name of the viewport (must be unique and stable for
@@ -1046,14 +1080,17 @@ viewport vpname typ p =
 
       observeName vpname
 
-      -- Update the viewport size and reset the content size to zero.
       c <- getContext
-      let newVp = VP 0 0 newSize (0, 0)
-          newSize = (c^.availWidthL, c^.availHeightL)
-          doInsert (Just vp) = Just $ vp & vpSize .~ newSize & vpContentSize .~ (0, 0)
-          doInsert Nothing = Just newVp
 
-      lift $ modify (& viewportMapL %~ (M.alter doInsert vpname))
+      -- Determine whether we should render a vertical scroll bar
+      let vScrollBarPolicy = case typ of
+              Vertical -> c^.ctxVScrollBarPolicyL
+              Both -> c^.ctxVScrollBarPolicyL
+              Horizontal -> Never
+          hScrollBarPolicy = case typ of
+              Horizontal -> c^.ctxHScrollBarPolicyL
+              Both -> c^.ctxHScrollBarPolicyL
+              Vertical -> Never
 
       -- Then render the viewport content widget with the rendering
       -- layout constraint released (but raise an exception if we are
@@ -1073,6 +1110,16 @@ viewport vpname typ p =
                 Both -> error $ "tried to embed an infinite-width or " <>
                                 "infinite-height widget in 'Both' type " <>
                                 "viewport " <> (show vpname)
+
+      -- Update the viewport size and reset the content size to zero.
+      let newVp = VP 0 0 newSize (0, 0)
+          newSize = (adjustedWidth, adjustedHeight)
+          adjustedWidth = if vScrollBarPolicy == Always then c^.availWidthL - 1 else c^.availWidthL
+          adjustedHeight = if hScrollBarPolicy == Always then c^.availHeightL - 1 else c^.availHeightL
+          doInsert (Just vp) = Just $ vp & vpSize .~ newSize & vpContentSize .~ (0, 0)
+          doInsert Nothing = Just newVp
+
+      lift $ modify (& viewportMapL %~ (M.alter doInsert vpname))
 
       initialResult <- render released
 
@@ -1167,11 +1214,76 @@ viewport vpname typ p =
               return $ translated & imageL .~ spaceFill
                                   & visibilityRequestsL .~ mempty
                                   & extentsL .~ mempty
-          _ -> render $ cropToContext
-                      $ padBottom Max
-                      $ padRight Max
-                      $ Widget Fixed Fixed
-                      $ return $ translated & visibilityRequestsL .~ mempty
+          _ -> do
+              lastVp <- fmap fromJust $ lift $ gets (M.lookup vpname . (^.viewportMapL))
+              render $ (if vScrollBarPolicy == Always then (<+> verticalScrollBar lastVp) else id) $
+                       (if hScrollBarPolicy == Always then (<=> horizontalScrollBar lastVp) else id) $
+                       (hLimit adjustedWidth
+                        $ vLimit adjustedHeight
+                        $ padBottom Max
+                        $ padRight Max
+                        $ Widget Fixed Fixed
+                        $ return $ translated & visibilityRequestsL .~ mempty)
+
+horizontalScrollBar :: Viewport -> Widget n
+horizontalScrollBar vp = scrollbar
+    where
+        vpWidth = V.regionWidth $ _vpSize vp
+        contentWidth = V.regionWidth $ _vpContentSize vp
+        scrollbar =
+            -- If the content is smaller than the viewport,
+            -- render a full scrollbar tray but no bar
+            if vpWidth == 0 || contentWidth <= vpWidth
+            then hLimit vpWidth $ vLimit 1 $ fill ' '
+            else
+                -- Divide up the scroll bar into regions
+                -- indicating what is visible and what isn't
+                let ratio :: Float
+                    ratio = fromIntegral contentWidth / fromIntegral vpWidth
+                    (middleFixed, middle) =
+                        let middle' = fromIntegral vpWidth / ratio
+                        in if middle' > 0.0 && middle' < 1.0
+                           then (True, 1)
+                           else (False, truncate middle')
+                    before =
+                        let before' = ceiling $ (fromIntegral $ _vpLeft vp) / ratio
+                        in max 0 $ before' - (if middleFixed then 1 else 0)
+                    after = max 0 $ vpWidth - (before + middle)
+                in padLeft (Pad before) $ padRight (Pad after) $
+                   vLimit 1 $
+                   hLimit middle $
+                   withDefAttr horizontalScrollBarAttr $
+                   fill ' '
+
+verticalScrollBar :: Viewport -> Widget n
+verticalScrollBar vp = scrollbar
+    where
+        vpHeight = V.regionHeight $ _vpSize vp
+        contentHeight = V.regionHeight $ _vpContentSize vp
+        scrollbar =
+            -- If the content is smaller than the viewport,
+            -- render a full scrollbar tray but no bar
+            if vpHeight == 0 || contentHeight <= vpHeight
+            then vLimit vpHeight $ hLimit 1 $ fill ' '
+            else
+                -- Divide up the scroll bar into regions
+                -- indicating what is visible and what isn't
+                let ratio :: Float
+                    ratio = fromIntegral contentHeight / fromIntegral vpHeight
+                    (middleFixed, middle) =
+                        let middle' = fromIntegral vpHeight / ratio
+                        in if middle' > 0.0 && middle' < 1.0
+                           then (True, 1)
+                           else (False, truncate middle')
+                    before =
+                        let before' = ceiling $ (fromIntegral $ _vpTop vp) / ratio
+                        in max 0 $ before' - (if middleFixed then 1 else 0)
+                    after = max 0 $ vpHeight - (before + middle)
+                in padTop (Pad before) $ padBottom (Pad after) $
+                   hLimit 1 $
+                   vLimit middle $
+                   withDefAttr verticalScrollBarAttr $
+                   fill ' '
 
 -- | Report a viewport's content size. This is used to indicate that
 -- the content size for the viewport should be as specified rather than

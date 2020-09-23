@@ -45,6 +45,7 @@ module Brick.Types
   , ctxDynBordersL
   , ctxVScrollBarPolicyL
   , ctxHScrollBarPolicyL
+  , ScrollBarPolicy(..)
 
   -- ** Rendering results
   , Result(..)
