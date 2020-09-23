@@ -26,7 +26,7 @@ data Name =
     deriving (Eq, Ord, Show)
 
 drawUI :: (Show a) => L.List Name a -> [Widget Name]
-drawUI l = [verticalScrollBarLayer TheList, ui]
+drawUI l = [ui]
     where
         label = str "Item " <+> cur <+> str " of " <+> total
         cur = case l^.(L.listSelectedL) of
@@ -36,57 +36,12 @@ drawUI l = [verticalScrollBarLayer TheList, ui]
         box = B.borderWithLabel label $
               hLimit 25 $
               vLimit 15 $
-              padRight (Pad 1) $
               L.renderList listDrawElement True l
         ui = C.vCenter $ vBox [ C.hCenter box
                               , str " "
                               , C.hCenter $ str "Press +/- to add/remove list elements."
                               , C.hCenter $ str "Press Esc to exit."
                               ]
-
-verticalScrollBarLayer :: (Ord n) => n -> Widget n
-verticalScrollBarLayer n = Widget Fixed Fixed $ do
-    mVp <- unsafeLookupViewport n
-    mEx <- unsafeLookupExtent n
-    render $ case (,) <$> mEx <*> mVp of
-        Nothing -> emptyWidget
-        Just (e, vp) ->
-            translateBy off scrollbar
-            where
-                eOffset = extentUpperLeft e
-                eRow = locationRow eOffset
-                eCol = locationColumn eOffset
-                col = eCol + (V.regionWidth $ _vpSize vp)
-                off = Location (col, eRow)
-                vpHeight = V.regionHeight $ _vpSize vp
-                contentHeight = V.regionHeight $ _vpContentSize vp
-                scrollbar =
-                    -- If the content is smaller than the viewport,
-                    -- render a full scrollbar
-                    if vpHeight == 0 || contentHeight <= vpHeight
-                    then withDefAttr scrollBarAttr $ vLimit vpHeight $ hLimit 1 $ fill ' '
-                    else
-                        -- Divide up the scroll bar into regions
-                        -- indicating what is visible and what isn't
-                        let ratio :: Float
-                            ratio = fromIntegral contentHeight / fromIntegral vpHeight
-                            (middleFixed, middle) =
-                                let middle' = fromIntegral vpHeight / ratio
-                                in if middle' > 0.0 && middle' < 1.0
-                                   then (True, 1)
-                                   else (False, truncate middle')
-                            before =
-                                let before' = ceiling $ (fromIntegral $ _vpTop vp) / ratio
-                                in max 0 $ before' - (if middleFixed then 1 else 0)
-                            after = max 0 $ vpHeight - (before + middle)
-                        in padTop (Pad before) $ padBottom (Pad after) $
-                           hLimit 1 $
-                           vLimit middle $
-                           withDefAttr scrollBarAttr $
-                           fill ' '
-
-scrollBarAttr :: A.AttrName
-scrollBarAttr = "scrollbar"
 
 appEvent :: L.List Name Char -> T.BrickEvent Name e -> T.EventM Name (T.Next (L.List Name Char))
 appEvent l (T.VtyEvent e) =
