@@ -105,6 +105,7 @@ import Lens.Micro.Mtl (zoom)
 import Control.Monad.Fail (MonadFail)
 #endif
 import Control.Monad.State.Strict
+import qualified Control.Monad.State.Lazy as LState
 import Control.Monad.Reader
 import Graphics.Vty (Attr)
 
@@ -140,7 +141,7 @@ nestEventM s' act = do
                      , requestedVisibleNames = requestedVisibleNames es
                      , vtyContext = vtyCtx
                      }
-    ((actResult, newSt), stInnerFinal) <- liftIO $ runStateT (runStateT (runReaderT (runEventM act) ro) s') stInner
+    ((actResult, newSt), stInnerFinal) <- liftIO $ runStateT (LState.runStateT (runReaderT (runEventM act) ro) s') stInner
 
     EventM $ lift $ lift $ modify $
         \st -> st { nextAction = nextAction stInnerFinal

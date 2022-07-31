@@ -55,6 +55,7 @@ where
 import qualified Control.Exception as E
 import Lens.Micro ((^.), (&), (.~), (%~), _1, _2)
 import Control.Monad.State.Strict
+import qualified Control.Monad.State.Lazy as LState
 import Control.Monad.Reader
 import Control.Concurrent (forkIO, killThread)
 import qualified Data.Foldable as F
@@ -272,7 +273,7 @@ customMainWithVty initialVty buildVty mUserChan app initialAppState = do
         emptyRS = RS M.empty mempty S.empty mempty mempty mempty mempty
         eventRO = EventRO M.empty mempty emptyRS
 
-    (((), appState), eState) <- runStateT (runStateT (runReaderT (runEventM (appStartEvent app)) eventRO) initialAppState) emptyES
+    (((), appState), eState) <- runStateT (LState.runStateT (runReaderT (runEventM (appStartEvent app)) eventRO) initialAppState) emptyES
     let initialRS = RS { viewportMap = M.empty
                        , rsScrollRequests = esScrollRequests eState
                        , observedNames = S.empty
@@ -397,7 +398,7 @@ runVty vtyCtx readEvent app appState rs prevExtents draw = do
     let emptyES = ES [] mempty mempty Continue vtyCtx
         eventRO = EventRO (viewportMap nextRS) nextExts nextRS
 
-    (((), newAppState), eState) <- runStateT (runStateT (runReaderT (runEventM (appHandleEvent app e'))
+    (((), newAppState), eState) <- runStateT (LState.runStateT (runReaderT (runEventM (appHandleEvent app e'))
                                 eventRO) appState) emptyES
     return ( newAppState
            , nextAction eState
